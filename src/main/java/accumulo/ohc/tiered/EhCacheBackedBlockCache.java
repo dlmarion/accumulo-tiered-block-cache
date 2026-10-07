@@ -52,7 +52,6 @@ public class EhCacheBackedBlockCache implements BlockCache {
     @Override
     public void indexWeightChanged() {
       if (block.indexWeightChanged()) {
-        // update weight
         cache.put(cacheKey, block.getBuffer());
       }
     }
@@ -234,7 +233,8 @@ public class EhCacheBackedBlockCache implements BlockCache {
         return cacheStats.getCacheGets();
       }
 
-      @Override
+      // @Override
+      // annotation commented out for 2.1.6, this is an override for 4.0.0
       public long evictionCount() {
         return cacheStats.getCacheEvictions();
       }
