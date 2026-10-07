@@ -17,6 +17,24 @@ public class EhCacheBackedBlockCacheManager extends BlockCacheManager {
   private Timer timer = null;
 
   @Override
+  public void stop() {
+    if (timer != null) {
+      timer.cancel();
+      timer = null;
+    }
+    try {
+      for (CacheType type : CacheType.values()) {
+        BlockCache cache = getBlockCache(type);
+        if (cache instanceof EhCacheBackedBlockCache ehbc) {
+          ehbc.close();
+        }
+      }
+    } finally {
+      super.stop();
+    }
+  }
+
+  @Override
   public void start(Configuration conf) {
     super.start(conf);
 
@@ -24,12 +42,12 @@ public class EhCacheBackedBlockCacheManager extends BlockCacheManager {
       EhCacheBackedBlockCacheConfiguration cc =
           new EhCacheBackedBlockCacheConfiguration(conf, type);
       Long interval = cc.getLogInterval(TimeUnit.MILLISECONDS);
-      if (interval != null) {
+      BlockCache blockCache = getBlockCache(type);
+      if (interval != null && blockCache instanceof EhCacheBackedBlockCache ehbc) {
         if (timer == null) {
           timer = new Timer(true);
         }
 
-        EhCacheBackedBlockCache ehbc = (EhCacheBackedBlockCache) getBlockCache(type);
         TimerTask task = new TimerTask() {
           @Override
           public void run() {

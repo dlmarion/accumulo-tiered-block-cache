@@ -38,7 +38,7 @@ public class EhCacheBackedBlockCacheConfiguration {
       } else if (k.startsWith(OFF_HEAP_PREFIX)) {
         off.put(k.substring(OFF_HEAP_PREFIX.length()), v);
       } else if (k.startsWith(DISK_PREFIX)) {
-        disk.put(k.substring(OFF_HEAP_PREFIX.length()), v);
+        disk.put(k.substring(DISK_PREFIX.length()), v);
       }
     });
 

@@ -97,17 +97,16 @@ public class EhCacheBackedBlockCache implements BlockCache {
     }
 
     ResourcePoolsBuilder resources = ResourcePoolsBuilder.newResourcePoolsBuilder();
-    config.getOffHeapProps();
     if (onHeapSize > 0L) {
-      resources.heap(onHeapSize, MemoryUnit.B);
+      resources = resources.heap(onHeapSize, MemoryUnit.B);
     }
     if (offHeapSize > 0L) {
-      resources.offheap(offHeapSize, MemoryUnit.B);
+      resources = resources.offheap(offHeapSize, MemoryUnit.B);
     }
     int segments = 0;
     int threads = 0;
     if (diskSize > 0L) {
-      resources.disk(diskSize, MemoryUnit.B);
+      resources = resources.disk(diskSize, MemoryUnit.B);
       segments = Integer.parseInt(config.getDiskProps().getOrDefault(DISK_SEGMENTS, "16"));
       threads = Integer.parseInt(config.getDiskProps().getOrDefault(DISK_THREADS, "1"));
     }
@@ -115,18 +114,19 @@ public class EhCacheBackedBlockCache implements BlockCache {
     CacheConfigurationBuilder<String,byte[]> ccb = CacheConfigurationBuilder
         .newCacheConfigurationBuilder(String.class, byte[].class, resources.build());
 
-    if (segments != 16 || threads != 1) {
-      ccb.withService(new OffHeapDiskStoreConfiguration(null, threads, segments));
+    if (diskSize > 0L && (segments != 16 || threads != 1)) {
+      ccb = ccb.withService(new OffHeapDiskStoreConfiguration(null, threads, segments));
     }
 
     CacheConfiguration<String,byte[]> cacheConfiguration = ccb.build();
 
-    CacheManagerBuilder<CacheManager> cmb = CacheManagerBuilder.newCacheManagerBuilder();
-
+    CacheManagerBuilder<? extends CacheManager> cmb;
     if (diskSize > 0L) {
       String dir = config.getDiskProps().getOrDefault(DISK_TIER_CACHE_DIR, null);
       Objects.requireNonNull(dir, "Cache directory must be specified for disk tier");
-      cmb.with(CacheManagerBuilder.persistence(dir));
+      cmb = CacheManagerBuilder.newCacheManagerBuilder().with(CacheManagerBuilder.persistence(dir));
+    } else {
+      cmb = CacheManagerBuilder.newCacheManagerBuilder();
     }
 
     StatisticsService statisticsService = new DefaultStatisticsService();
@@ -155,22 +155,6 @@ public class EhCacheBackedBlockCache implements BlockCache {
     }
   }
 
-  private Block load(String key, Loader loader, Map<String,byte[]> resolvedDeps) {
-
-    CacheEntry entry = getBlock(key);
-    if (entry == null) {
-      byte[] data = loader.load((int) Math.min(Integer.MAX_VALUE, this.onHeapSize), resolvedDeps);
-      if (data == null) {
-        return null;
-      } else {
-        LOG.info("Loaded block {} from Loader", key);
-        return new Block(data);
-      }
-    } else {
-      return new Block(entry.getBuffer());
-    }
-  }
-
   private Map<String,byte[]> resolveDependencies(Map<String,Loader> deps) {
     if (deps.size() == 1) {
       Entry<String,Loader> entry = deps.entrySet().iterator().next();
@@ -194,33 +178,36 @@ public class EhCacheBackedBlockCache implements BlockCache {
 
   @Override
   public CacheEntry getBlock(String blockName, Loader loader) {
-    Map<String,Loader> deps = loader.getDependencies();
-    Block block = null;
-    if (deps.size() == 0) {
-      block = load(blockName, loader, Collections.emptyMap());
-      cache.putIfAbsent(blockName, block.getBuffer());
-    } else {
-      // This code path exist to handle the case where dependencies may need to be loaded. Loading
-      // dependencies will access the cache. Cache load functions
-      // should not access the cache.
-      byte[] data = cache.get(blockName);
+    Objects.requireNonNull(blockName, "Block name is null");
+    Objects.requireNonNull(loader, "Loader is null");
 
-      if (data == null) {
-        // Load dependencies outside of cache load function.
-        Map<String,byte[]> resolvedDeps = resolveDependencies(deps);
-        if (resolvedDeps == null) {
-          return null;
-        }
-
-        // Use asMap because it will not increment stats, getIfPresent recorded a miss above. Use
-        // computeIfAbsent because it is possible another thread loaded
-        // the data since this thread called getIfPresent.
-        block = load(blockName, loader, Collections.emptyMap());
-        cache.putIfAbsent(blockName, block.getBuffer());
-      }
+    byte[] data = cache.get(blockName);
+    if (data != null) {
+      return new TlfuCacheEntry(blockName, new Block(data));
     }
-    return new TlfuCacheEntry(blockName, block);
 
+    Map<String,Loader> deps =
+        Objects.requireNonNull(loader.getDependencies(), "Loader dependencies are null");
+    Map<String,byte[]> resolvedDeps =
+        deps.isEmpty() ? Collections.emptyMap() : resolveDependencies(deps);
+    if (resolvedDeps == null) {
+      return null;
+    }
+
+    data = loader.load((int) Math.min(Integer.MAX_VALUE, onHeapSize), resolvedDeps);
+    if (data == null) {
+      return null;
+    }
+
+    byte[] existingData = cache.putIfAbsent(blockName, data);
+    if (existingData != null) {
+      data = existingData;
+    }
+    return new TlfuCacheEntry(blockName, new Block(data));
+  }
+
+  void close() {
+    cacheManager.close();
   }
 
   @Override
