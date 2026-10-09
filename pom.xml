@@ -12,14 +12,21 @@
   </properties>
   <dependencies>
     <dependency>
-      <groupId>org.apache.accumulo</groupId>
-      <artifactId>accumulo-core</artifactId>
-      <version>2.1.6</version>
-    </dependency>
-    <dependency>
       <groupId>org.ehcache</groupId>
       <artifactId>ehcache</artifactId>
       <version>3.11.1</version>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.accumulo</groupId>
+      <artifactId>accumulo-core</artifactId>
+      <version>2.1.6</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-api</artifactId>
+      <version>2.0.17</version>
+      <scope>provided</scope>
     </dependency>
     <dependency>
       <!-- needed because https://issues.apache.org/jira/browse/LOG4J2-3601 -->
@@ -118,6 +125,25 @@
             <goals>
               <goal>sort</goal>
             </goals>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-assembly-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>assembly</id>
+            <goals>
+              <goal>single</goal>
+            </goals>
+            <phase>package</phase>
+            <configuration>
+              <descriptors>
+                <descriptor>src/build/assembly.xml</descriptor>
+              </descriptors>
+              <tarLongFileMode>posix</tarLongFileMode>
+            </configuration>
           </execution>
         </executions>
       </plugin>

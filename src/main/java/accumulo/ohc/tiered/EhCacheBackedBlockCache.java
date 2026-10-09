@@ -70,10 +70,11 @@ public class EhCacheBackedBlockCache implements BlockCache {
   private final PersistentCacheManager cacheManager;
   private final Cache<String,byte[]> cache;
   private final CacheStatistics cacheStats;
+  private final String cacheAlias;
 
   EhCacheBackedBlockCache(final EhCacheBackedBlockCacheConfiguration config, CacheType type) {
 
-    final String cacheAlias = type.name() + " Block Cache";
+    cacheAlias = type.name() + " Block Cache";
     onHeapSize = Long.parseLong(config.getOnHeapProps().getOrDefault(TIER_SIZE, "0"));
     offHeapSize = Long.parseLong(config.getOffHeapProps().getOrDefault(TIER_SIZE, "0"));
     diskSize = Long.parseLong(config.getDiskProps().getOrDefault(TIER_SIZE, "0"));
@@ -243,7 +244,18 @@ public class EhCacheBackedBlockCache implements BlockCache {
   }
 
   public void logStats() {
-    LOG.info("Cache Stats: {}", cacheStats.getTierStatistics());
+    cacheStats.getTierStatistics().forEach((k, v) -> {
+      StringBuilder buf = new StringBuilder();
+      buf.append("allocated bytes: ").append(v.getAllocatedByteSize());
+      buf.append(", used bytes: ").append(v.getOccupiedByteSize());
+      buf.append(", evictions: ").append(v.getEvictions());
+      buf.append(", expirations: ").append(v.getExpirations());
+      buf.append(", hits: ").append(v.getHits());
+      buf.append(", misses: ").append(v.getMisses());
+      buf.append(", puts: ").append(v.getPuts());
+      buf.append(", removals: ").append(v.getRemovals());
+      LOG.info("{} - {} Tier, stats: {}", cacheAlias, k, buf);
+    });
   }
 
 }
